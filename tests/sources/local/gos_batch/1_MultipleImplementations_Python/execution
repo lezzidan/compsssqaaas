@@ -1,0 +1,212 @@
+#!/bin/bash
+
+  # Obtain parameters
+  COMPSs_exec=$1
+  comm=$2
+  runcompss_opts=$3
+  base_app_dir=$4
+  COMPSs_log_folder=$5
+  target_log_folder=$6
+  retry_num=$7
+  execution_envs=$8
+
+  # Global variables
+  exit_value=1
+  app_name="multiple_implementations.py"
+
+  test_name="1_MultipleImplementations_Python"
+
+# Process extra execution envs
+
+#----------------------------------------------------------------------------------
+
+  # Process extra execution envs
+  VARIABLES=($(echo "$execution_envs" | tr "|" "\n"))
+  if [ "${#VARIABLES[@]}" -lt 5 ]; then
+    echo "[ERROR] Not enough variables declared in execution_envs, try launching with corresponding configuration."
+    echo "[ERROR] Aborting execution for not enough input arguments for the xml files."
+    exit 1
+  fi
+
+  #Default values
+  PORT=22
+    QOS="default"
+    RESERVATION="disabled"
+    INSTALL_DIR="/apps/COMPSs/Trunk"
+    APP_DIR="${base_app_dir}"
+
+    WK_DIR="${base_app_dir}/COMPSsWorker"
+    CLASSPATH="${base_app_dir}/${jar_name}"
+    PYTHONPATH="${base_app_dir}/src"
+    ENV_SCRIPT="${base_app_dir}/env.sh"
+    REAL_ENVIRONMENT_ENVS=""
+
+      # shellcheck disable=SC2207
+    for item in ${VARIABLES[*]}
+      do
+          # shellcheck disable=SC2207
+          var=($(echo "$item" | tr "=" "\n"))
+          echo "var : ${var[0]} value: ${var[1]}"
+          case ${var[0]} in
+          INSTALL_DIR)
+            if [ ! "${var[1]}" = "DEFAULT" ]; then
+              INSTALL_DIR=${var[1]}
+            fi
+            ;;
+          USER)
+            USER=${var[1]}
+            ;;
+          HOST)
+            HOST=${var[1]}
+            ;;
+         REAL_ENVIRONMENT_ENVS)
+           if [ "${var[1]}" = "DEFAULT" ]; then
+             REAL_ENVIRONMENT_ENVS=""
+           else
+             REAL_ENVIRONMENT_ENVS=${var[1]}
+           fi
+           ;;
+          ENV_SCRIPT)
+            if [ "${var[1]}" = "DEFAULT" ]; then
+              ENV_SCRIPT="${APP_DIR}/env.sh"
+            else
+              ENV_SCRIPT=${var[1]}
+            fi
+            ;;
+          QUEUE)
+              QUEUE=${var[1]}
+              ;;
+          PORT)
+            PORT=${var[1]}
+            ;;
+          RESERVATION)
+            RESERVATION=${var[1]}
+            ;;
+          QOS)
+            QOS=${var[1]}
+            ;;
+          WK_DIR)
+            if [ ! "${var[1]}" = "DEFAULT" ]; then
+              WK_DIR=${var[1]}
+            fi
+            ;;
+          COMPUTER)
+            if [ ! "${var[1]}" = "DEFAULT" ]; then
+              COMPUTER=${var[1]}
+            fi
+            ;;
+         APP_DIR)
+            if [ ! "${var[1]}" = "DEFAULT" ]; then
+              APP_DIR="${var[1]}/${test_name}"
+              CLASSPATH="${APP_DIR}/target/${jar_name}"
+            fi
+            ;;
+          PYTHONPATH)
+               if [ "${var[1]}" = "DEFAULT" ]; then
+                  PYTHONPATH="${base_app_dir}/src/${pyPath}"
+               else
+                 PYTHONPATH="${var[1]}"
+               fi
+            ;;
+          esac
+      done
+      FILE_CFG="${INSTALL_DIR}/Runtime/scripts/queues/supercomputers/${COMPUTER}.cfg"
+      projectFile="${base_app_dir}"/project.xml
+      resourcesFile="${base_app_dir}"/resources.xml
+
+      sed -i '/<Queue>/c<Queue>'"${QUEUE}"'<\/Queue>' "$resourcesFile"
+
+      sed -i '/<Queue>/c<Queue>'"${QUEUE}"'<\/Queue>' "$projectFile"
+      sed -i '/<QOS>/c<QOS>'"${QOS}"'<\/QOS>' "$projectFile"
+      sed -i '/<InstallDir>/c<InstallDir>'"${INSTALL_DIR}"'<\/InstallDir>' "$projectFile"
+      sed -i '/<WorkingDir>/c<WorkingDir>'"${WK_DIR}"'<\/WorkingDir>' "$projectFile"
+      sed -i '/<AppDir>/c<AppDir>'"${APP_DIR}"'<\/AppDir>' "$projectFile"
+      sed -i '/<Classpath>/c<Classpath>'"${CLASSPATH}"'<\/Classpath>' "$projectFile"
+      sed -i '/<Pythonpath>/c<Pythonpath>'"${PYTHONPATH}"'<\/Pythonpath>' "$projectFile"
+      sed -i '/<EnvironmentScript>/c<EnvironmentScript>'"${ENV_SCRIPT}"'<\/EnvironmentScript>' "$projectFile"
+      sed -i '/<User>/c<User>'"${USER}"'<\/User>' "$projectFile"
+      sed -i '/<FileCFG>/c<FileCFG>'"${FILE_CFG}"'<\/FileCFG>' "$projectFile"
+      sed -i '/<Port>/c<Port>'"${PORT}"'<\/Port>' "$projectFile"
+
+      sed -i '/<ComputeNode Name=/c<ComputeNode Name=\"'"${HOST}"'\">' "$resourcesFile"
+      sed -i '/<ComputingCluster Name=/c<ComputingCluster Name=\"'"${HOST}"'\">' "$resourcesFile"
+      sed -i '/<ComputeNode Name=/c<ComputeNode Name=\"'"${HOST}"'\">' "$projectFile"
+      sed -i '/<ComputingCluster Name=/c<ComputingCluster Name=\"'"${HOST}"'\">' "$projectFile"
+
+
+
+  execution_envs=$REAL_ENVIRONMENT_ENVS
+
+
+
+
+  #----------------------------------------------------------------------------------
+  # Run application
+  echo
+  echo "*** RUNNING PYTHON APPLICATION MULTIPLE IMPLEMENTATIONS"
+
+  export REMOTE_COMPSS=$INSTALL_DIR
+  export APP_DIR
+  export REMOTE_BINARY="${APP_DIR}/src/scripts/checkString.sh"
+  export CUS=2
+  export TEST_WORKING_DIR="${base_app_dir}"
+  export WK_DIR
+
+  for python_interpreter in ${execution_envs}; do
+    echo "   - Running with Interpreter: ${python_interpreter}"
+    output_log="${target_log_folder}/${app_name}_${python_interpreter}_0${retry_num}.outputlog"
+    error_log="${target_log_folder}/${app_name}_${python_interpreter}_0${retry_num}.errorlog"
+    specific_log_dir="${COMPSs_log_folder}/${app_name}_${python_interpreter}_0${retry_num}"
+    exec_target_log_folder="${target_log_folder}/${app_name}_${python_interpreter}_0${retry_num}"
+    mkdir -p "${exec_target_log_folder}"
+    expectedTime=8000s
+
+    python_mpi_worker=""
+    if [ "$python_interpreter" == 'python3_mpi' ]; then
+       echo "WARN: Test not requiered for ${python_interpreter}" | tee -a "${output_log}"
+       continue
+    fi
+
+    # shellcheck disable=SC2086
+    timeout --signal=2 $expectedTime "${COMPSs_exec}" \
+      --project="${base_app_dir}"/project.xml \
+      --resources="${base_app_dir}"/resources.xml \
+      \
+      --comm="es.bsc.compss.gos.master.GOSAdaptor" \
+      \
+      --debug \
+      ${runcompss_opts} \
+      \
+      --lang=python \
+      --python_interpreter="${python_interpreter}" \
+      ${python_mpi_worker} \
+      --pythonpath="${base_app_dir}"/src \
+      --specific_log_dir="${specific_log_dir}" \
+      \
+      "${base_app_dir}/src/${app_name}" > >(tee "${output_log}") 2> >(tee "${error_log}" >&2)
+
+    # Check timeout
+    if [[ "$?" = "124" ]]; then
+      # Copy LOG files
+      cp -rf "${specific_log_dir}"/* "${exec_target_log_folder}"
+
+      # Report time out
+      echo "[WARNING] Python Application timed out" >> "${output_log}"
+      exit_value=124
+    else
+      # Copy LOG files
+      cp -rf "${specific_log_dir}"/* "${exec_target_log_folder}"
+
+      # Check result
+      "${base_app_dir}"/result "${output_log}" "${error_log}" "${exec_target_log_folder}"
+      exit_value=$?
+    fi
+
+    if [ ${exit_value} -ne 0 ]; then
+      exit ${exit_value}
+    fi
+  done
+
+  #----------------------------------------------------------------------------------
+  # Return execution status
+  exit ${exit_value}
