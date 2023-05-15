@@ -39,7 +39,7 @@ import javax.xml.parsers.ParserConfigurationException;
  * Goal which instruments the application.
  *
  * @goal instrument
- * 
+ *
  * @phase process-classes
  * 
  * @requiresDependencyResolution compile+runtime
